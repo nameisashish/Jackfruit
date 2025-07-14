@@ -1,14 +1,11 @@
 import streamlit as st
-import matplotlib.pyplot as plt
 import cv2
 import numpy as np
 from PIL import Image
-import io
 import time
 from ultralytics import YOLO
 import plotly.graph_objects as go
 import plotly.express as px
-import json
 import os
 from huggingface_hub import hf_hub_download
 
@@ -483,6 +480,15 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
+# Cache the model loading
+@st.cache_resource
+def load_model():
+    model_path = hf_hub_download(
+        repo_id="theashish03/jackfruit",
+        filename="best.pt"
+    )
+    return YOLO(model_path)
+
 # Header with enhanced styling
 st.markdown("""
 <div class="main-header">
@@ -641,9 +647,7 @@ with col2:
                     time.sleep(0.01)
             
             try:
-                # Download the model from Hugging Face
-                model_path = hf_hub_download(repo_id="theashish03/jackfruit", filename="best.pt")
-                model = YOLO(model_path)
+                model = load_model()
                 
                 # Use confidence threshold directly
                 adjusted_conf = confidence_threshold
