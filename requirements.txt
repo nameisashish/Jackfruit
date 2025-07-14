@@ -1,0 +1,8 @@
+huggingface_hub
+ultralytics
+streamlit
+opencv-python-headless
+numpy
+Pillow
+matplotlib
+plotly
