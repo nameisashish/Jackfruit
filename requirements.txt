@@ -15,4 +15,4 @@ py-cpuinfo
 pandas
 seaborn
 opencv-python-headless
-ultralytics
+ultralytics --no-deps
