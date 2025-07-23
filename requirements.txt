@@ -1,18 +1,8 @@
 huggingface-hub
+ultralytics
 streamlit
-plotly
-matplotlib
+opencv-python-headless
 numpy
 Pillow
-pyyaml
-requests
-scipy
-torch
-torchvision
-tqdm
-psutil
-py-cpuinfo
-pandas
-seaborn
-opencv-python-headless
-ultralytics --no-deps
+matplotlib
+plotly
