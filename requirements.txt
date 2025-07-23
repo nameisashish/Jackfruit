@@ -2,7 +2,7 @@ huggingface-hub
 ultralytics
 streamlit
 opencv-python-headless
-opencv-python
+opencv
 numpy
 Pillow
 matplotlib
