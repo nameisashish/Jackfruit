@@ -1,13 +1,140 @@
 import streamlit as st
-import cv2
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps, UnidentifiedImageError
 import time
-from ultralytics import YOLO
 import plotly.graph_objects as go
 import plotly.express as px
 import os
-from huggingface_hub import hf_hub_download
+import tempfile
+from importlib.util import find_spec
+from contextlib import suppress
+from html import escape
+
+MODEL_REPO_ID = os.getenv("JACKFRUIT_MODEL_REPO_ID", "theashish03/jackfruit")
+MODEL_FILENAME = os.getenv("JACKFRUIT_MODEL_FILENAME", "best.pt")
+MODEL_REVISION = os.getenv(
+    "JACKFRUIT_MODEL_REVISION",
+    "a2106beb9c286ace88715fe9497bd1dac08d3908",
+)
+MAX_IMAGE_PIXELS = int(os.getenv("JACKFRUIT_MAX_IMAGE_PIXELS", "12000000"))
+Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
+
+
+def _cv2():
+    import cv2
+
+    return cv2
+
+
+def model_runtime_available():
+    return find_spec("cv2") is not None and find_spec("ultralytics") is not None
+
+
+def validate_uploaded_image(uploaded_file):
+    try:
+        image = Image.open(uploaded_file)
+        image.load()
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+        raise ValueError("The uploaded file is not a valid supported image.") from exc
+
+    width, height = image.size
+    if width <= 0 or height <= 0:
+        raise ValueError("The uploaded image has invalid dimensions.")
+    if width * height > MAX_IMAGE_PIXELS:
+        raise ValueError(
+            f"The uploaded image is too large. Please use an image up to {MAX_IMAGE_PIXELS:,} pixels."
+        )
+
+    image_format = image.format
+    image = ImageOps.exif_transpose(image).convert("RGB")
+    image.format = image_format
+    return image
+
+
+def image_to_cv2_bgr(image):
+    cv2 = _cv2()
+    return cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+
+
+def model_runtime_message():
+    return (
+        "Model inference dependencies are not installed in this environment. "
+        "On Streamlit Community Cloud, redeploy the app with Python 3.12 to enable YOLO detection."
+    )
+
+
+def image_metadata_html(image):
+    image_format = escape(image.format or "Uploaded image")
+    mode = escape(image.mode)
+    width, height = image.size
+    return f"""
+        <div class="stats-card">
+            <h4>Image Information</h4>
+            <p><strong>Format:</strong> {image_format}</p>
+            <p><strong>Size:</strong> {width} x {height} pixels</p>
+            <p><strong>Mode:</strong> {mode}</p>
+        </div>
+        """
+
+
+def summarize_detections(boxes, confidence_threshold, target_class_id=0):
+    jackfruit_count = 0
+    confidences = []
+
+    if boxes is None:
+        return jackfruit_count, confidences
+
+    for box in boxes:
+        class_id = int(box.cls[0])
+        conf_score = float(box.conf[0])
+        if class_id == target_class_id and conf_score >= confidence_threshold:
+            jackfruit_count += 1
+            confidences.append(conf_score)
+
+    return jackfruit_count, confidences
+
+
+def confidence_summary(confidences):
+    if not confidences:
+        return {
+            "avg_conf": 0,
+            "min_conf": 0,
+            "max_conf": 0,
+            "avg_conf_pct": 0,
+            "min_conf_pct": 0,
+            "max_conf_pct": 0,
+        }
+
+    avg_conf = float(np.mean(confidences))
+    min_conf = float(np.min(confidences))
+    max_conf = float(np.max(confidences))
+    return {
+        "avg_conf": avg_conf,
+        "min_conf": min_conf,
+        "max_conf": max_conf,
+        "avg_conf_pct": avg_conf * 100,
+        "min_conf_pct": min_conf * 100,
+        "max_conf_pct": max_conf * 100,
+    }
+
+
+def run_model_inference(image_cv, confidence_threshold):
+    cv2 = _cv2()
+    temp_image_path = None
+
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as temp_image:
+            temp_image_path = temp_image.name
+
+        if not cv2.imwrite(temp_image_path, image_cv):
+            raise RuntimeError("Could not prepare the uploaded image for detection.")
+
+        results = load_model()(temp_image_path, conf=confidence_threshold, save=False)
+        return results[0]
+    finally:
+        if temp_image_path:
+            with suppress(FileNotFoundError):
+                os.remove(temp_image_path)
 
 # Page configuration
 st.set_page_config(
@@ -483,9 +610,13 @@ st.markdown(f"""
 # Cache the model loading
 @st.cache_resource
 def load_model():
+    from huggingface_hub import hf_hub_download
+    from ultralytics import YOLO
+
     model_path = hf_hub_download(
-        repo_id="theashish03/jackfruit",
-        filename="best.pt"
+        repo_id=MODEL_REPO_ID,
+        filename=MODEL_FILENAME,
+        revision=MODEL_REVISION,
     )
     return YOLO(model_path)
 
@@ -590,36 +721,28 @@ with col1:
     )
     
     if uploaded_file is not None:
-        # Display uploaded image with enhanced styling
-        image = Image.open(uploaded_file)
-        st.image(image, caption="📁 Uploaded Image", use_column_width=True)
-        
-        # Image info
-        st.markdown(f"""
-        <div class="stats-card">
-            <h4>📋 Image Information</h4>
-            <p><strong>Format:</strong> {image.format}</p>
-            <p><strong>Size:</strong> {image.size[0]} x {image.size[1]} pixels</p>
-            <p><strong>Mode:</strong> {image.mode}</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Convert PIL image to OpenCV format
-        image_array = np.array(image)
-        if len(image_array.shape) == 3:
-            image_cv = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
-        else:
-            image_cv = image_array
+        try:
+            image = validate_uploaded_image(uploaded_file)
+            st.session_state.current_image_error = None
+            st.image(image, caption="Uploaded Image", use_container_width=True)
+            st.markdown(image_metadata_html(image), unsafe_allow_html=True)
+            image_cv = image_to_cv2_bgr(image) if model_runtime_available() else None
+        except ValueError as exc:
+            st.session_state.current_image_error = str(exc)
+            st.error(str(exc))
+            image_cv = None
 
 with col2:
-    if uploaded_file is not None:
+    if uploaded_file is not None and not st.session_state.get("current_image_error"):
         st.markdown("""
         <div class="result-container">
             <h2 style="color: white; text-align: center; margin-bottom: 1rem; font-weight: 600;">🔍 Detection Results</h2>
         </div>
         """, unsafe_allow_html=True)
         
-        if st.button("🚀 Analyze Image", key="analyze_btn"):
+        if not model_runtime_available():
+            st.warning(model_runtime_message())
+        elif st.button("🚀 Analyze Image", key="analyze_btn"):
             # Enhanced loading animation
             st.markdown("""
             <div class="loading-container">
@@ -647,18 +770,10 @@ with col2:
                     time.sleep(0.01)
             
             try:
-                model = load_model()
-                
                 # Use confidence threshold directly
                 adjusted_conf = confidence_threshold
-                
-                # Save uploaded image temporarily
-                temp_image_path = "temp_image.jpg"
-                cv2.imwrite(temp_image_path, image_cv)
-                
-                # Run inference
-                results = model(temp_image_path, conf=adjusted_conf, save=False)
-                result = results[0]
+
+                result = run_model_inference(image_cv, adjusted_conf)
                 boxes = result.boxes
                 
                 # Clear loading elements
@@ -666,31 +781,13 @@ with col2:
                 status_text.empty()
                 
                 # Count jackfruits and collect detection data
-                jackfruit_count = 0
-                confidences = []
-                
-                if boxes is not None:
-                    for box in boxes:
-                        class_id = int(box.cls[0])
-                        conf_score = float(box.conf[0])
-                        if class_id == 0 and conf_score >= adjusted_conf:
-                            jackfruit_count += 1
-                            confidences.append(conf_score)
+                jackfruit_count, confidences = summarize_detections(boxes, adjusted_conf)
                 
                 # Add to history
                 st.session_state.detection_history.append(jackfruit_count)
                 
                 # Calculate summary
-                if confidences:
-                    avg_conf = np.mean(confidences)
-                    min_conf = np.min(confidences)
-                    max_conf = np.max(confidences)
-                    avg_conf_pct = avg_conf * 100
-                    min_conf_pct = min_conf * 100
-                    max_conf_pct = max_conf * 100
-                else:
-                    avg_conf = min_conf = max_conf = 0
-                    avg_conf_pct = min_conf_pct = max_conf_pct = 0
+                stats = confidence_summary(confidences)
                 
                 # Display results with enhanced styling
                 st.markdown(f"""
@@ -701,8 +798,8 @@ with col2:
                 
                 # Show annotated image with animation
                 annotated_img = result.plot()
-                annotated_img_rgb = cv2.cvtColor(annotated_img, cv2.COLOR_BGR2RGB)
-                st.image(annotated_img_rgb, caption=f"✅ Analysis Complete: {jackfruit_count} jackfruits detected", use_column_width=True)
+                annotated_img_rgb = _cv2().cvtColor(annotated_img, _cv2().COLOR_BGR2RGB)
+                st.image(annotated_img_rgb, caption=f"Analysis Complete: {jackfruit_count} jackfruits detected", use_container_width=True)
                 
                 # Summarized detection details
                 if jackfruit_count > 0:
@@ -713,18 +810,16 @@ with col2:
                         <p><strong>Min Confidence:</strong> {min_conf:.3f} ({min_conf_pct:.1f}%)</p>
                         <p><strong>Max Confidence:</strong> {max_conf:.3f} ({max_conf_pct:.1f}%)</p>
                     </div>
-                    """.format(avg_conf=avg_conf, avg_conf_pct=avg_conf_pct, min_conf=min_conf, min_conf_pct=min_conf_pct, max_conf=max_conf, max_conf_pct=max_conf_pct), unsafe_allow_html=True)
+                    """.format(**stats), unsafe_allow_html=True)
                 
                 # Success message
                 st.success(f"🎉 Analysis completed successfully! Found {jackfruit_count} jackfruit{'s' if jackfruit_count != 1 else ''} in your image.")
-                
-                # Cleanup
-                if os.path.exists(temp_image_path):
-                    os.remove(temp_image_path)
                         
             except Exception as e:
+                progress_bar.empty()
+                status_text.empty()
                 st.error(f"❌ Error during detection: {str(e)}")
-                st.info("💡 Please ensure the model file path is correct and the model is accessible.")
+                st.info("💡 Please check the model configuration and try again.")
 
 # Enhanced History visualization
 if st.session_state.detection_history:

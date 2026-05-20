@@ -1,8 +1,10 @@
-matplotlib
-huggingface-hub
-ultralytics
-streamlit
-opencv-python-headless
-numpy
-Pillow
-plotly
+huggingface-hub==1.15.0
+numpy==1.26.4; python_version < "3.13"
+numpy==2.2.6; python_version >= "3.13"
+opencv-python==4.10.0.84; python_version < "3.13"
+Pillow==12.2.0
+plotly==6.7.0
+streamlit==1.57.0
+torch==2.9.0; python_version < "3.13" and (platform_system != "Darwin" or platform_machine != "x86_64")
+torchvision==0.24.0; python_version < "3.13" and (platform_system != "Darwin" or platform_machine != "x86_64")
+ultralytics==8.4.52; python_version < "3.13" and (platform_system != "Darwin" or platform_machine != "x86_64")
