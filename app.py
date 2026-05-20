@@ -729,7 +729,7 @@ with col1:
         try:
             image = validate_uploaded_image(uploaded_file)
             st.session_state.current_image_error = None
-            st.image(image, caption="Uploaded Image", use_container_width=True)
+            st.image(image, caption="Uploaded Image", width="stretch")
             st.markdown(image_metadata_html(image), unsafe_allow_html=True)
             image_cv = image_to_cv2_bgr(image) if model_runtime_available() else None
         except ValueError as exc:
@@ -804,7 +804,7 @@ with col2:
                 # Show annotated image with animation
                 annotated_img = result.plot()
                 annotated_img_rgb = _cv2().cvtColor(annotated_img, _cv2().COLOR_BGR2RGB)
-                st.image(annotated_img_rgb, caption=f"Analysis Complete: {jackfruit_count} jackfruits detected", use_container_width=True)
+                st.image(annotated_img_rgb, caption=f"Analysis Complete: {jackfruit_count} jackfruits detected", width="stretch")
                 
                 # Summarized detection details
                 if jackfruit_count > 0:
@@ -857,7 +857,7 @@ if st.session_state.detection_history:
             template="plotly_dark",
             hovermode='x unified'
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     
     with col2:
         # Enhanced distribution chart
@@ -874,7 +874,7 @@ if st.session_state.detection_history:
                 yaxis_title="Frequency",
                 hovermode='x unified'
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         else:
             st.info("Upload more images to see distribution chart")
 
