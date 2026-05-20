@@ -6,7 +6,8 @@ import plotly.graph_objects as go
 import plotly.express as px
 import os
 import tempfile
-from importlib.util import find_spec
+from functools import lru_cache
+from importlib import import_module
 from contextlib import suppress
 from html import escape
 
@@ -21,13 +22,17 @@ Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
 
 
 def _cv2():
-    import cv2
-
-    return cv2
+    return import_module("cv2")
 
 
+@lru_cache(maxsize=1)
 def model_runtime_available():
-    return find_spec("cv2") is not None and find_spec("ultralytics") is not None
+    try:
+        _cv2()
+        import_module("ultralytics")
+    except Exception:
+        return False
+    return True
 
 
 def validate_uploaded_image(uploaded_file):
