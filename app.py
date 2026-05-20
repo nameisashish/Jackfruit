@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 import os
 import tempfile
+from importlib.util import find_spec
 from contextlib import suppress
 from html import escape
 
@@ -23,6 +24,10 @@ def _cv2():
     import cv2
 
     return cv2
+
+
+def model_runtime_available():
+    return find_spec("cv2") is not None and find_spec("ultralytics") is not None
 
 
 def validate_uploaded_image(uploaded_file):
@@ -49,6 +54,13 @@ def validate_uploaded_image(uploaded_file):
 def image_to_cv2_bgr(image):
     cv2 = _cv2()
     return cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+
+
+def model_runtime_message():
+    return (
+        "Model inference dependencies are not installed in this environment. "
+        "On Streamlit Community Cloud, redeploy the app with Python 3.12 to enable YOLO detection."
+    )
 
 
 def image_metadata_html(image):
@@ -714,7 +726,7 @@ with col1:
             st.session_state.current_image_error = None
             st.image(image, caption="Uploaded Image", use_container_width=True)
             st.markdown(image_metadata_html(image), unsafe_allow_html=True)
-            image_cv = image_to_cv2_bgr(image)
+            image_cv = image_to_cv2_bgr(image) if model_runtime_available() else None
         except ValueError as exc:
             st.session_state.current_image_error = str(exc)
             st.error(str(exc))
@@ -728,7 +740,9 @@ with col2:
         </div>
         """, unsafe_allow_html=True)
         
-        if st.button("🚀 Analyze Image", key="analyze_btn"):
+        if not model_runtime_available():
+            st.warning(model_runtime_message())
+        elif st.button("🚀 Analyze Image", key="analyze_btn"):
             # Enhanced loading animation
             st.markdown("""
             <div class="loading-container">

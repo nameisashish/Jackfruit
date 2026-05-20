@@ -12,10 +12,10 @@ python -m pip install -r requirements.txt
 streamlit run app.py
 ```
 
-The ML detector depends on patched PyTorch wheels. Current secure PyTorch wheels
-are not published for Intel macOS, so Intel macOS installs still load the app UI
-but should use the devcontainer or a Linux/Python 3.11 deployment for model
-inference.
+The ML detector depends on patched PyTorch wheels. Use Python 3.12 on Streamlit
+Community Cloud to enable YOLO inference. If the app is deployed on Python 3.13,
+the UI will still install and load, but model inference will be disabled because
+PyTorch wheels are not available there yet.
 
 ## Verify
 
